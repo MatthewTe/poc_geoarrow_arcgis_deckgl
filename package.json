@@ -14,9 +14,13 @@
         "@deck.gl/core": "^9.0.0",
         "@deck.gl/layers": "^9.0.0",
         "@geoarrow/deck.gl-layers": "^0.3.0-beta.17",
-        "apache-arrow": "^17.0.0"
+        "@geoarrow/geoarrow-wasm": "^0.2.0-beta.4",
+        "apache-arrow": "^17.0.0",
+        "deckgl-example-pure-js-esri-arcgis": "file:",
+        "geoarrow-wasm": "^0.1.0"
     },
     "devDependencies": {
-        "vite": "^4.0.0"
+        "vite": "^4.0.0",
+        "vite-plugin-wasm": "^3.3.0"
     }
 }
