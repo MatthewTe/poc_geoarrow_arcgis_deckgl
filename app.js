@@ -7,57 +7,12 @@ import wasmUrl from "@geoarrow/geoarrow-wasm/esm/index_bg.wasm?url"
 import { WebMercatorToLatLon, DegreeToXYTile, GetListZoom14Tiles} from './spatial_utils';
 import { GeoArrowScatterplotLayer } from "@geoarrow/deck.gl-layers";
 import * as arrow from "./node_modules/apache-arrow/Arrow.dom";
-import { ParquetDataset, ParquetFile, set_panic_hook, writeGeoJSON } from '@geoarrow/geoarrow-wasm';
-import { allYellowStoneTiles } from './all_layer_ids';
-import { compareSchemas } from 'apache-arrow/visitor/typecomparator';
-/* 
-fetch("http://127.0.0.1:8000/api/vNext/insar/comprehensive/parquet", {
-    method: 'POST',
-    headers: {
-        "Content-Type": "application/json"
-    },
-    body: JSON.stringify({"layer_id": '1dc69ece-8ab1-3819-b3a1-8de5c2e92575'})
-})
-.then(
-    (response) => {return response.arrayBuffer()}
-).then((buffer) => {
-    return arrow.tableFromIPC(buffer)
-}).then((table) => {
-    const layer = new DeckLayer({
-    'deck.layers': [
-        new GeoArrowScatterplotLayer({
-        id: 'custom_scatterplot',
-        data: table,
-        radiusMinPixels: 1,
-        getFillColor: ({ index, data }) => {
-            const recordBatch = data.data;
-            const row = recordBatch.get(index);
-            const velocity = row['velocity_mm_yr']
-            let color;
-            if (velocity < 0) {
-                color = [255, 0, 0]; // Red for negative velocities
-            } else if (velocity >= 0 && velocity <= 10) {
-                color = [0, 255, 0]; // Green for velocities between 0 and 10
-            } else {
-                color = [0, 0, 255]; // Blue for velocities greater than 10
-            }
-            return color;
-        },
+import { writeGeoJSON, readGeoParquet } from '@geoarrow/geoarrow-wasm';
+import wasmInit, {readParquet} from "parquet-wasm";
 
-        pickable: true,
-        })
-    ]
-    });
-
-    map.add(layer)
-
-})
-*/
-
-
-await initWasm(wasmUrl);
-
-// 
+initWasm(wasmUrl)
+const parquetWasmUrl = "https://cdn.jsdelivr.net/npm/parquet-wasm@0.6.1/esm/parquet_wasm_bg.wasm"
+await wasmInit(parquetWasmUrl)
 
 const map = new ArcGISMap({
     basemap: 'topo',
@@ -73,9 +28,6 @@ const mapView = new MapView({
 const loadBtn = document.getElementById("renderButton")
 loadBtn.addEventListener("click", async (e) => {
     // Getting lat/lng bbox of map extent:
-    let { maxx, maxy } = WebMercatorToLatLon(mapView.extent.xmax, mapView.extent.ymax);
-    let { minx, miny } = WebMercatorToLatLon(mapView.extent.xmin, mapView.extent.ymin);
-
     let selectedRederMethod = document.getElementById("renderMode").value
     let maxLatLon = WebMercatorToLatLon(mapView.extent.xmax, mapView.extent.ymax);
     let minLatLon = WebMercatorToLatLon(mapView.extent.xmin, mapView.extent.ymin);
@@ -85,18 +37,21 @@ loadBtn.addEventListener("click", async (e) => {
 
     let allTiles = GetListZoom14Tiles(minXYTile, maxXYTile)
 
-    if (selectedRederMethod === "wasm_parquet") {
+    if (selectedRederMethod === "wasmparquet") {
     }
     else if (selectedRederMethod === "geojson") {
         
+        const decoder = new TextDecoder('utf-8')
+        let uniqueGeoJsonTiles = allTiles.filter((tile) => !(map.findLayerById(`geojson-${tile.x}-${tile.y}`)))
+
         async function fetchNextChunk() {
-            let tile = allTiles.pop()
+            let tile = uniqueGeoJsonTiles.pop()
             try {
                 if ( tile !== null && tile !== undefined ) {
                     let response = await fetch("http://127.0.0.1:8000/api/vNext/insar/comprehensive/parquet", {
                         method: "POST",
                         body: JSON.stringify({
-                            return_type: "geojson",
+                            return_type: "parquet",
                             layer_id: "1dc69ece-8ab1-3819-b3a1-8de5c2e92575",
                             tile_row: tile.x,
                             tile_column: tile.y
@@ -106,7 +61,10 @@ loadBtn.addEventListener("click", async (e) => {
                         }
                     })
                     if (response.ok) {
-                        return await response.arrayBuffer();
+
+                        let fileContent = await response.arrayBuffer();
+                        let chunkTable = readGeoParquet(new Uint8Array(fileContent))
+                        return { tile:tile, arrowTable: chunkTable };
                     } else {
                         return null
                     }
@@ -119,7 +77,7 @@ loadBtn.addEventListener("click", async (e) => {
        }
 
        async function* getGeoJsonData() {
-            while (allTiles.length > 0) {
+            while (uniqueGeoJsonTiles.length > 0) {
                 let tile = await fetchNextChunk()
                 if (tile) {
                     yield tile
@@ -129,13 +87,13 @@ loadBtn.addEventListener("click", async (e) => {
 
         (async () => {
             for await (const tile of getGeoJsonData()) {
-                const decoder = new TextDecoder('utf-8')
-                let blob = new Blob([decoder.decode(tile)], {
+                let blob = new Blob([decoder.decode(writeGeoJSON(tile.arrowTable))], {
                     type: 'application/json'
                 })
                 let url = URL.createObjectURL(blob)
                 const layer = new GeoJSONLayer({
-                    url
+                    id: `geojson-${tile.tile.x}-${tile.tile.y}`,
+                    url: url
                 })
                 map.add(layer)
             }
@@ -144,75 +102,63 @@ loadBtn.addEventListener("click", async (e) => {
 
     } else if (selectedRederMethod === "rest_api_parquet") {
 
+        let uniqueGeoArrowTiles = allTiles.filter((tile) => !(map.findLayerById(`geoarrow-buffers-${tile.x}-${tile.y}`)))
         async function fetchNextChunk() {
-            let tile = allTiles.pop()
-
-            if ( tile !== null && tile !== undefined ) {
-                let response = await fetch("http://127.0.0.1:8000/api/vNext/insar/comprehensive/parquet", {
-                    method: "POST",
-                    body: JSON.stringify({
-                        return_type: "arrow",
-                        layer_id: "1dc69ece-8ab1-3819-b3a1-8de5c2e92575",
-                        tile_row: tile.x,
-                        tile_column: tile.y
-                    }),
-                    headers: {
-                        "Content-Type":"application/json"
+            let tile = uniqueGeoArrowTiles.pop()
+            
+            try {
+                if ( tile !== null && tile !== undefined ) {
+                    let response = await fetch("http://127.0.0.1:8000/api/vNext/insar/comprehensive/parquet", {
+                        method: "POST",
+                        body: JSON.stringify({
+                            return_type: "geoarrow_parquet",
+                            layer_id: "1dc69ece-8ab1-3819-b3a1-8de5c2e92575",
+                            tile_row: tile.x,
+                            tile_column: tile.y
+                        }),
+                        headers: {
+                            "Content-Type":"application/json"
+                        }
+                    })
+                    if (!response.ok) {
+                        return null
                     }
-                })
-                if (!response.ok) {
-                    return null
+                    let arrayBuffer = await response.arrayBuffer()
+                    let wasmTable = readParquet(new Uint8Array(arrayBuffer))
+                    let jsTable = arrow.tableFromIPC(wasmTable.intoIPCStream())
+                    return {tile: tile, table:jsTable }
                 }
-                let arrayBuffer = await response.arrayBuffer()
-                    return arrow.tableFromIPC(arrayBuffer)
+                return null
+            } catch (err) {
+                console.log(err.stack)
+                return null
             }
-            return null
        }
 
         async function* getData() {
-            let chunk
-            while (chunk = await fetchNextChunk()) {
-                if (chunk) { 
-                    yield chunk
+            while (uniqueGeoArrowTiles.length > 0 ) {
+                let chunkedData =  await fetchNextChunk()
+                if (chunkedData) { 
+                    yield chunkedData
                 }
             }
         }
 
-        const layers = new DeckLayer({
-            'deck.layers': [
-                new GeoArrowScatterplotLayer({
-                    id: 'insar-datasets',
-                    data: getData()
-                })
-            ]
-        })
-
+        const layer = new DeckLayer({'deck.layers': []});
+        map.add(layer);
+        (async () => {
+            for await (const tile of getData()) {
+                layer.deck.layers = [
+                    ...layer.deck.layers,
+                    new GeoArrowScatterplotLayer({
+                        id: `geoarrow-buffers-${tile.tile.x}-${tile.tile.y}`,
+                        data: tile.table,
+                        radiusMinPixels: 3,
+                        pickable: true
+                    })
+                ]
+            }
+        })();
 
     }
 })
-
-
-/* 
-function debounce(func, wait) {
-  let timeout;
-  return function(...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
-  };
-}
-
-function onExtentChange(event) {
-    let maxLatLon = WebMercatorToLatLon(event.extent.xmax, event.extent.ymax);
-    let minLatLon = WebMercatorToLatLon(event.extent.xmin, event.extent.ymin);
-
-    let maxXYTile = DegreeToXYTile(maxLatLon.lat, maxLatLon.lon)
-    let minXYTile = DegreeToXYTile(minLatLon.lat, minLatLon.lon)
-
-    let allTiles = GetListZoom14Tiles(minXYTile, maxXYTile)
-
-    console.log(allTiles)
-
-}
-
-mapView.watch('extent', debounce(onExtentChange, 500))
-*/

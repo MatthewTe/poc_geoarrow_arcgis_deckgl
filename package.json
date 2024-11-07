@@ -10,14 +10,18 @@
     },
     "dependencies": {
         "@arcgis/core": "^4.28.0",
+        "@deck.gl/aggregation-layers": "^9.0.34",
         "@deck.gl/arcgis": "^9.0.0",
-        "@deck.gl/core": "^9.0.0",
-        "@deck.gl/layers": "^9.0.0",
+        "@deck.gl/core": "^9.0.34",
+        "@deck.gl/geo-layers": "^9.0.34",
+        "@deck.gl/layers": "^9.0.34",
         "@geoarrow/deck.gl-layers": "^0.3.0-beta.17",
         "@geoarrow/geoarrow-wasm": "^0.2.0-beta.4",
+        "@math.gl/polygon": "^3.6.2",
         "apache-arrow": "^17.0.0",
         "deckgl-example-pure-js-esri-arcgis": "file:",
-        "geoarrow-wasm": "^0.1.0"
+        "geoarrow-wasm": "^0.1.0",
+        "parquet-wasm": "^0.6.1"
     },
     "devDependencies": {
         "vite": "^4.0.0",
