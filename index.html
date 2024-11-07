@@ -17,6 +17,16 @@
   </head>
   <body>
     <div id="viewDiv"></div>
+
+    <div id="controls" style="position: absolute; top: 10px; left: 70px; z-index: 10;">
+      <select id="renderMode">
+        <option value="wasm_parquet">WASM Parquet</option>
+        <option value="geojson">GeoJson</option>
+        <option value="rest_api_parquet">REST API Parquet</option>
+      </select>
+      <button id="renderButton">Load</button>
+    </div>
+
     <script type="module" src='app.js'></script>
   </body>
 </html>
