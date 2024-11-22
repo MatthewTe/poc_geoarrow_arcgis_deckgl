@@ -93,9 +93,41 @@ loadBtn.addEventListener("click", async (e) => {
                 let url = URL.createObjectURL(blob)
                 const layer = new GeoJSONLayer({
                     id: `geojson-${tile.tile.x}-${tile.tile.y}`,
-                    url: url
-                })
-                map.add(layer)
+                    url: url,
+                    renderer: {
+                    type: "simple", // SimpleRenderer applies the same symbol for all features
+                    symbol: {
+                        type: "simple-marker", // Marker symbol for point data
+                        style: "circle",
+                        color: "blue", // Default color
+                        size: 6, // Default size
+                        outline: {
+                            color: "black",
+                            width: 0.5
+                        }
+                    },
+                    visualVariables: [
+                        {
+                            type: "color",
+                            field: "velocity_mm_yr",
+                            stops: [
+                                { value: -30, color: "green" }, // Green for the minimum value
+                                { value: -20, color: "yellow" },  // Yellow for the midpoint
+                                { value: -15, color: "red" }     // Red for the maximum value
+                            ]
+                        }
+                    ]
+                },
+                popupEnabled: true,
+                    popupTemplate: {
+                    title: "Feature Details",
+                    content: `
+                        <b>Velocity (mm/year):</b> {velocity_mm_yr}<br>
+                    `
+                }
+            }
+        )
+            map.add(layer)
             }
         })();
 
@@ -162,3 +194,5 @@ loadBtn.addEventListener("click", async (e) => {
 
     }
 })
+
+
